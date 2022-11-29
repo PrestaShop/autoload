@@ -56,6 +56,13 @@ final class PrestashopAutoload
         return $this;
     }
 
+    public function disableOverrides(): self
+    {
+        $this->enableOverrides = false;
+
+        return $this;
+    }
+
     public static function create(string $rootDirectory, string $cacheDirectory): self
     {
         self::$instance = new self($rootDirectory, $cacheDirectory);
