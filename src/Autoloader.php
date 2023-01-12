@@ -40,13 +40,24 @@ final class Autoloader
      */
     private $loadedClasses = [];
 
-    public function __construct(string $directory)
+    /**
+     * @var bool
+     */
+    private $initialized = false;
+
+    /**
+     * @var callable|null
+     */
+    private $initialize;
+
+    public function __construct(string $directory, ?callable $initialize = null)
     {
         if (!str_ends_with($directory, DIRECTORY_SEPARATOR)) {
             $directory .= DIRECTORY_SEPARATOR;
         }
 
         $this->rootDirectory = $directory;
+        $this->initialize = $initialize;
     }
 
     public function register(): void
@@ -61,6 +72,11 @@ final class Autoloader
 
     public function load(string $className): void
     {
+        if (!$this->initialized && null !== $this->initialize) {
+            ($this->initialize)();
+            $this->initialized = true;
+        }
+
         if (str_starts_with($className, self::NAMESPACED_CLASSES)) {
             $classWithoutNs = substr($className, strlen(self::NAMESPACED_CLASSES));
             class_alias($classWithoutNs, '\\'.$className);
