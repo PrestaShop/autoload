@@ -2,6 +2,7 @@
 
 namespace Tests;
 
+use LogicException;
 use PHPUnit\Framework\TestCase;
 use PrestaShop\Autoload\Autoloader;
 use RuntimeException;
@@ -35,10 +36,8 @@ class AutoloaderTest extends TestCase
             ['classes/FooInterface.php', 'interface FooInterface {}'],
             ['classes/Foo.php', 'class FooCore implements FooInterface {}'],
         ];
-        $fs = new Filesystem();
-        foreach ($files as $file) {
-            $fs->dumpFile(self::ROOT_DIR . $file[0], "<?php \n" . $file[1]);
-        }
+
+        $this->createTestFiles($files);
 
         $classIndex = [
             'FooInterface' => [
@@ -116,10 +115,8 @@ class AutoloaderTest extends TestCase
             ['classes/AbstractBar.php', 'abstract class AbstractBarCore extends AbstractObject {}'],
             ['classes/AbstractObject.php', 'abstract class AbstractObjectCore {}'],
         ];
-        $fs = new Filesystem();
-        foreach ($files as $file) {
-            $fs->dumpFile(self::ROOT_DIR . $file[0], "<?php \n" . $file[1]);
-        }
+
+        $this->createTestFiles($files);
 
         $autoload = new Autoloader(self::ROOT_DIR);
         $autoload->setClassIndex($classIndex);
@@ -154,7 +151,66 @@ class AutoloaderTest extends TestCase
         }
     }
 
-    public function testCallLoadClassTwiceShouldWork(): void
+
+    /**
+     * @dataProvider getClassIndexData
+     */
+    public function testCallLoadClassTwiceShouldWork(array $classIndex, array $files): void
+    {
+        $this->createTestFiles($files);
+
+        $autoload = new Autoloader(self::ROOT_DIR);
+        $autoload->setClassIndex($classIndex);
+        $autoload->register(); // register autoload once.
+
+        $autoload->load('BarTest');
+        $autoload->load('BarTest');
+        $autoload->load('Logger'); // Logger is an alias to PrestaShopLogger
+        $autoload->load('Logger');
+        self::assertTrue(true);
+
+        spl_autoload_unregister([$autoload, 'load']);
+    }
+
+
+
+    /**
+     * @dataProvider getClassIndexData
+     */
+    public function testAutoloadCallsStaticMethods(array $classIndex, array $files): void
+    {
+        $this->createTestFiles($files);
+
+        $autoload = new Autoloader(self::ROOT_DIR);
+        $autoload->setClassIndex($classIndex);
+
+        spl_autoload_register([$autoload, 'load']);
+        \Baz::foo(); // @phpstan-ignore-line
+        spl_autoload_unregister([$autoload, 'load']);
+
+        self::assertSame('Hello world', \Baz::foo()); // @phpstan-ignore-line
+    }
+
+    /**
+     * @dataProvider getClassIndexData
+     */
+    public function testAutoloadInitializationCallbackAsync(array $classIndex, array $files): void
+    {
+        $this->createTestFiles($files);
+
+        $autoload = new Autoloader(self::ROOT_DIR);
+        $autoload->setInitializationCallBack(function () {
+            throw new LogicException('This will fail when initialized');
+        });
+        $autoload->setClassIndex($classIndex);
+        $autoload->register();
+
+        $this->expectException(LogicException::class);
+        \Baz::foo(); // @phpstan-ignore-line
+        spl_autoload_unregister([$autoload, 'load']);
+    }
+
+    public function getClassIndexData(): iterable
     {
         $classIndex = [
             'BarTest' => [
@@ -173,34 +229,6 @@ class AutoloaderTest extends TestCase
                 'path' => 'classes/PrestaShopLogger.php',
                 'type' => 'class',
             ],
-        ];
-
-        $files = [
-            ['classes/BarTest.php', 'class BarTestCore {}'],
-            ['classes/PrestaShopLogger.php', 'class PrestaShopLoggerCore {}'],
-        ];
-
-        $autoload = new Autoloader(self::ROOT_DIR);
-        $autoload->setClassIndex($classIndex);
-        $autoload->register(); // register autoload once.
-
-        $fs = new Filesystem();
-        foreach ($files as $file) {
-            $fs->dumpFile(self::ROOT_DIR . $file[0], "<?php \n" . $file[1]);
-        }
-
-        $autoload->load('BarTest');
-        $autoload->load('BarTest');
-        $autoload->load('Logger'); // Logger is an alias to PrestaShopLogger
-        $autoload->load('Logger');
-        self::assertTrue(true);
-
-        spl_autoload_unregister([$autoload, 'load']);
-    }
-
-    public function testAutoloadCallsStaticMethods(): void
-    {
-        $classIndex = [
             'Baz' => [
                 'path' => null,
                 'type' => 'class',
@@ -212,6 +240,8 @@ class AutoloaderTest extends TestCase
         ];
 
         $files = [
+            ['classes/BarTest.php', 'class BarTestCore {}'],
+            ['classes/PrestaShopLogger.php', 'class PrestaShopLoggerCore {}'],
             [
                 'classes/Baz.php',
                 'class BazCore {
@@ -224,18 +254,15 @@ class AutoloaderTest extends TestCase
                 }',
             ],
         ];
+
+        yield 'default class index' => [$classIndex, $files];
+    }
+
+    private function createTestFiles(array $files): void
+    {
         $fs = new Filesystem();
         foreach ($files as $file) {
             $fs->dumpFile(self::ROOT_DIR . $file[0], "<?php \n" . $file[1]);
         }
-
-        $autoload = new Autoloader(self::ROOT_DIR);
-        $autoload->setClassIndex($classIndex);
-
-        spl_autoload_register([$autoload, 'load']);
-        \Baz::foo(); // @phpstan-ignore-line
-        spl_autoload_unregister([$autoload, 'load']);
-
-        self::assertSame('Hello world', \Baz::foo()); // @phpstan-ignore-line
     }
 }
